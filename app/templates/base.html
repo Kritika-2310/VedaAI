@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}VedaAI{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-icon">V</span> VedaAI
+      </div>
+      <div class="toolkit-badge">✦ AI Teacher's Toolkit</div>
+      <div class="nav-item">⊞ Home</div>
+      <div class="nav-item">🎓 My Classroom</div>
+      <div class="nav-item">📄 Assignments</div>
+      <div class="nav-item active">📋 Exams</div>
+      <div class="nav-item">🕘 My Library</div>
+      <div class="sidebar-spacer"></div>
+      <div class="nav-item">⚙ Settings</div>
+      <div class="sidebar-footer">
+        <div class="school-icon"></div>
+        <div>
+          <div style="font-weight:600;">Delhi Public School</div>
+          <div style="font-size:11px;color:#999;">Bokaro Steel City</div>
+        </div>
+      </div>
+    </aside>
+    <div class="main-area">
+      <div class="topbar">
+        <div class="breadcrumb">← 📄 Exams</div>
+        <div class="topbar-icons">
+          <span>?</span>
+          <span>🔔</span>
+          <span>✦</span>
+          <div class="topbar-user">
+            <div class="avatar"></div> Madhur Rastogi ▾
+          </div>
+        </div>
+      </div>
+      <div class="content" style="{% block content_style %}{% endblock %}">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

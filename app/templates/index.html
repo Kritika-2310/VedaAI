@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Upload - VedaAI{% endblock %}
+{% block content %}
+<div id="upload-view">
+  <h1 class="upload-heading">Upload <span class="accent">Question Paper &amp; Answer Sheets</span></h1>
+  <p class="upload-sub">Upload both files to get started</p>
+  <img class="upload-mascot" src="https://api.dicebear.com/7.x/notionists/svg?seed=teacher" alt="" />
+
+  <form id="upload-form">
+    <div class="upload-row">
+      <label class="upload-card" id="qp-card">
+        <input type="file" id="question_paper" accept=".pdf,image/*" required />
+        <div class="upload-card-empty">
+          <div class="upload-icon">⬆</div>
+          <div class="upload-card-title">Upload <span class="accent">Question Paper</span></div>
+          <div class="upload-card-hint">Max 10MB</div>
+        </div>
+      </label>
+      <label class="upload-card" id="as-card">
+        <input type="file" id="answer_sheet" accept=".pdf,image/*" required />
+        <div class="upload-card-empty">
+          <div class="upload-icon">⬆</div>
+          <div class="upload-card-title">Upload <span class="accent">Answer Sheet</span></div>
+          <div class="upload-card-hint">Max 10MB</div>
+        </div>
+      </label>
+    </div>
+
+    <div class="start-mapping-row">
+      <button type="submit" class="btn-primary" id="start-btn" disabled>Start Mapping →</button>
+      <div class="start-mapping-hint">Once both files are uploaded, you'll be able to map answers with questions</div>
+      <div class="status-text" id="status"></div>
+    </div>
+  </form>
+</div>
+
+<div id="loading-view" style="display:none; height: calc(100vh - 140px);">
+  <div class="loading-screen">
+    <div class="loading-sparkle">✦</div>
+    <div class="loading-title">Extracting...</div>
+    <div class="loading-sub">This may take a while</div>
+  </div>
+</div>
+
+<script>
+  function fileSizeLabel(bytes) {
+    return (bytes / (1024 * 1024)).toFixed(1) + "MB";
+  }
+
+  function renderFilled(cardId, file) {
+    const card = document.getElementById(cardId);
+    card.classList.add("filled");
+    card.innerHTML = `
+      <div class="file-chip">
+        <div class="file-icon-badge">PDF</div>
+        <div class="file-meta">
+          <div class="file-name">${file.name}</div>
+          <div class="file-sub">${fileSizeLabel(file.size)}</div>
+        </div>
+        <button type="button" class="file-remove" onclick="location.reload()">✕</button>
+      </div>
+    `;
+  }
+
+  let qpFile = null, asFile = null;
+
+  document.getElementById("question_paper").addEventListener("change", (e) => {
+    qpFile = e.target.files[0];
+    if (qpFile) renderFilled("qp-card", qpFile);
+    checkReady();
+  });
+  document.getElementById("answer_sheet").addEventListener("change", (e) => {
+    asFile = e.target.files[0];
+    if (asFile) renderFilled("as-card", asFile);
+    checkReady();
+  });
+
+  function checkReady() {
+    document.getElementById("start-btn").disabled = !(qpFile && asFile);
+  }
+
+  document.getElementById("upload-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    document.getElementById("upload-view").style.display = "none";
+    document.getElementById("loading-view").style.display = "block";
+
+    const formData = new FormData();
+    formData.append("question_paper", qpFile);
+    formData.append("answer_sheet", asFile);
+
+    try {
+      const res = await fetch("/api/process", { method: "POST", body: formData });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+      window.location.href = `/review/${data.session_id}`;
+    } catch (err) {
+      document.getElementById("loading-view").style.display = "none";
+      document.getElementById("upload-view").style.display = "block";
+      const status = document.getElementById("status");
+      status.textContent = "Error: " + err.message;
+      status.className = "status-text error";
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Review - VedaAI{% endblock %}
+{% block content_style %}padding:0;{% endblock %}
+{% block content %}
+<div class="review-layout">
+  <div class="q-panel">
+    <div class="q-panel-header">
+      <span>Extracted Questions (from question paper)</span>
+      <span class="link-btn" id="expand-all">Expand All</span>
+      <span class="link-btn" id="run-grading" style="margin-left:12px;">Run Grading ✦</span>
+    </div>
+    <div id="questions-list"></div>
+  </div>
+
+  <div class="answer-panel">
+    <div class="answer-toolbar">
+      <div style="font-weight:600;">Answer Sheet</div>
+      <div class="answer-toolbar-controls">
+        <span id="zoom-out" style="cursor:pointer;">−</span>
+        <span id="zoom-label">100%</span>
+        <span id="zoom-in" style="cursor:pointer;">+</span>
+        <span>|</span>
+        <span id="page-prev" style="cursor:pointer;">‹</span>
+        <span id="page-label">Page 1 of 1</span>
+        <span id="page-next" style="cursor:pointer;">›</span>
+      </div>
+    </div>
+    <div class="answer-canvas-wrap">
+      <div class="answer-canvas" id="answer-canvas">
+        <img id="answer-sheet-img" src="" />
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const sessionId = "{{ session_id }}";
+  let sessionData = null;
+  let zoom = 100;
+
+  function scoreClass(mapping) {
+    if (!mapping || mapping.status === "unanswered") return "none";
+    if (mapping.status === "answered") return "good";
+    if (mapping.status === "out_of_order") return "mid";
+    return "bad";
+  }
+  function scoreLabel(mapping) {
+    if (!mapping || mapping.status === "unanswered") return "—";
+    return mapping.status === "out_of_order" ? "Out of order" : "Answered";
+  }
+
+  async function loadSession() {
+    const res = await fetch(`/api/session/${sessionId}`);
+    sessionData = await res.json();
+    renderQuestions();
+    renderAnswerSheet();
+  }
+
+  function renderQuestions() {
+    const list = document.getElementById("questions-list");
+    list.innerHTML = "";
+    sessionData.questions.forEach((q, i) => {
+      const mapping = sessionData.mappings.find((m) => m.question_number === q.number);
+      const grading = (sessionData.grading || []).find((g) => g.question_number === q.number);
+
+      const item = document.createElement("div");
+      item.className = "q-item";
+      item.id = `q-item-${i}`;
+
+      const badgeCls = grading
+        ? (grading.score / grading.max_score >= 0.6 ? "good" : grading.score > 0 ? "mid" : "bad")
+        : scoreClass(mapping);
+      const badgeText = grading ? `${grading.score}/${grading.max_score}` : scoreLabel(mapping);
+
+      item.innerHTML = `
+        <div class="q-item-row" data-index="${i}">
+          <div class="q-number-badge">${i + 1}</div>
+          <div class="q-item-text"><strong>${q.number}</strong> ${q.text}</div>
+          <div class="q-score-badge ${badgeCls}">${badgeText}</div>
+          <div class="q-chevron">▾</div>
+        </div>
+        <div class="q-feedback">
+          <div class="q-feedback-label">AI Feedback</div>
+          <div class="q-feedback-text">${
+            grading ? grading.feedback : "Run grading to see AI feedback for this question."
+          }</div>
+        </div>
+      `;
+      list.appendChild(item);
+
+      item.querySelector(".q-item-row").addEventListener("click", () => {
+        const wasExpanded = item.classList.contains("expanded");
+        document.querySelectorAll(".q-item").forEach((el) => {
+          el.classList.remove("expanded", "selected");
+        });
+        if (!wasExpanded) {
+          item.classList.add("expanded", "selected");
+        }
+        highlightAnswer(mapping);
+      });
+    });
+  }
+
+  let currentPage = 0;
+
+  function getPageImages() {
+    if (sessionData.answer_sheet_mime === "application/pdf" && sessionData.answer_sheet_pages.length > 0) {
+      return sessionData.answer_sheet_pages.map((b64) => `data:image/png;base64,${b64}`);
+    }
+    if (sessionData.answer_sheet_mime.startsWith("image/")) {
+      return [`data:${sessionData.answer_sheet_mime};base64,${sessionData.answer_sheet_b64}`];
+    }
+    return [];
+  }
+
+  function renderAnswerSheet() {
+    const pages = getPageImages();
+    const img = document.getElementById("answer-sheet-img");
+    if (pages.length === 0) {
+      document.querySelector(".answer-canvas-wrap").innerHTML =
+        '<div style="padding:40px;color:#888;font-size:13px;">No preview available for this file type.</div>';
+      return;
+    }
+    img.src = pages[currentPage];
+    document.getElementById("page-label").textContent = `Page ${currentPage + 1} of ${pages.length}`;
+  }
+
+  document.getElementById("page-prev").addEventListener("click", () => {
+    const pages = getPageImages();
+    if (currentPage > 0) { currentPage--; renderAnswerSheet(); clearHighlights(); }
+  });
+  document.getElementById("page-next").addEventListener("click", () => {
+    const pages = getPageImages();
+    if (currentPage < pages.length - 1) { currentPage++; renderAnswerSheet(); clearHighlights(); }
+  });
+  function clearHighlights() {
+    document.querySelectorAll(".highlight-box").forEach((e) => e.remove());
+  }
+
+  function highlightAnswer(mapping) {
+    document.querySelectorAll(".highlight-box").forEach((e) => e.remove());
+    if (!mapping || !mapping.answer_indices || mapping.answer_indices.length === 0) return;
+
+    // jump to the first page containing a mapped answer
+    const firstAnswer = sessionData.answers[mapping.answer_indices[0]];
+    if (firstAnswer && (firstAnswer.page - 1) !== currentPage) {
+      currentPage = firstAnswer.page - 1;
+      renderAnswerSheet();
+    }
+
+    const canvas = document.getElementById("answer-canvas");
+    mapping.answer_indices.forEach((idx) => {
+      const answer = sessionData.answers[idx];
+      if (!answer) return;
+      if ((answer.page - 1) !== currentPage) return; // only draw boxes for the visible page
+      const [ymin, xmin, ymax, xmax] = answer.bbox;
+      const box = document.createElement("div");
+      box.className = "highlight-box";
+      box.style.top = `${ymin / 10}%`;
+      box.style.left = `${xmin / 10}%`;
+      box.style.height = `${(ymax - ymin) / 10}%`;
+      box.style.width = `${(xmax - xmin) / 10}%`;
+      box.innerHTML = `<div class="highlight-tag">${mapping.question_number}</div>`;
+      canvas.appendChild(box);
+    });
+  }
+
+  document.getElementById("expand-all").addEventListener("click", () => {
+    document.querySelectorAll(".q-item").forEach((el) => el.classList.add("expanded"));
+  });
+  document.getElementById("run-grading").addEventListener("click", async (e) => {
+    e.target.textContent = "Grading...";
+    try {
+      const res = await fetch(`/api/grade/${sessionId}`, { method: "POST" });
+      const data = await res.json();
+      sessionData.grading = data.grading;
+      renderQuestions();
+      e.target.textContent = "Run Grading ✦";
+    } catch (err) {
+      e.target.textContent = "Grading failed";
+    }
+  });
+  document.getElementById("zoom-in").addEventListener("click", () => {
+    zoom = Math.min(zoom + 25, 200);
+    document.getElementById("answer-sheet-img").style.width = zoom + "%";
+    document.getElementById("zoom-label").textContent = zoom + "%";
+  });
+  document.getElementById("zoom-out").addEventListener("click", () => {
+    zoom = Math.max(zoom - 25, 50);
+    document.getElementById("answer-sheet-img").style.width = zoom + "%";
+    document.getElementById("zoom-label").textContent = zoom + "%";
+  });
+
+  loadSession();
+</script>
+{% endblock %}
